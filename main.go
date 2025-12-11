@@ -74,6 +74,7 @@ func main() {
 		log.Printf("Connected as: %s#%s (ID %s)", s.State.User.Username, s.State.User.Discriminator, botID)
 	})
 
+	// --- AI message handler ---
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil || m.Author.Bot {
 			return
@@ -135,10 +136,98 @@ func main() {
 		}
 	})
 
+	// --- Slash command for status/activity ---
+	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type != discordgo.InteractionApplicationCommand {
+			return
+		}
+
+		switch i.ApplicationCommandData().Name {
+		case "setstatus":
+			opts := i.ApplicationCommandData().Options
+			if len(opts) < 3 {
+				s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseChannelMessageWithSource,
+					Data: &discordgo.InteractionResponseData{
+						Content: "Usage: /setstatus <status> <activityType> <activityName>",
+					},
+				})
+				return
+			}
+
+			status := opts[0].StringValue()
+			actTypeStr := opts[1].StringValue()
+			actName := opts[2].StringValue()
+
+			var actType discordgo.ActivityType
+			switch strings.ToLower(actTypeStr) {
+			case "playing":
+				actType = discordgo.Game
+			case "streaming":
+				actType = discordgo.Streaming
+			case "listening":
+				actType = discordgo.Listening
+			case "watching":
+				actType = discordgo.Watching
+			default:
+				actType = discordgo.Game
+			}
+
+			err := s.UpdateStatusComplex(discordgo.UpdateStatusData{
+				Status: status, // online, idle, dnd
+				Activities: []*discordgo.Activity{
+					{
+						Name: actName,
+						Type: actType,
+					},
+				},
+			})
+			resp := "Status updated!"
+			if err != nil {
+				resp = "Failed to update status: " + err.Error()
+			}
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: resp,
+				},
+			})
+		}
+	})
+
 	if err := dg.Open(); err != nil {
 		log.Fatalf("dg.Open: %v", err)
 	}
 	defer dg.Close()
+
+	// --- Register slash command ---
+	_, err = dg.ApplicationCommandCreate(dg.State.User.ID, "", &discordgo.ApplicationCommand{
+		Name:        "setstatus",
+		Description: "Change bot status/activity",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "status",
+				Description: "online, idle, dnd",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "activitytype",
+				Description: "playing, streaming, listening, watching",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "activityname",
+				Description: "The activity name",
+				Required:    true,
+			},
+		},
+	})
+	if err != nil {
+		log.Println("Cannot create slash command:", err)
+	}
 
 	// --- Render keepalive webserver ---
 	port := os.Getenv("PORT")
@@ -295,37 +384,6 @@ func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 			if v, ok := obj[k]; ok {
 				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
 					return strings.TrimSpace(s), nil
-				}
-				if m, ok := v.(map[string]any); ok {
-					for _, vv := range m {
-						if s2, ok := vv.(string); ok && strings.TrimSpace(s2) != "" {
-							return strings.TrimSpace(s2), nil
-						}
-					}
-				}
-				if arr, ok := v.([]any); ok && len(arr) > 0 {
-					if s, ok := arr[0].(string); ok && strings.TrimSpace(s) != "" {
-						return strings.TrimSpace(s), nil
-					}
-					if m, ok := arr[0].(map[string]any); ok {
-						for _, vv := range m {
-							if s2, ok := vv.(string); ok && strings.TrimSpace(s2) != "" {
-								return strings.TrimSpace(s2), nil
-							}
-						}
-					}
-				}
-			}
-		}
-		if gen, ok := obj["generations"]; ok {
-			if arr, ok := gen.([]any); ok && len(arr) > 0 {
-				if m, ok := arr[0].(map[string]any); ok {
-					if t, ok := m["text"].(string); ok {
-						return strings.TrimSpace(t), nil
-					}
-					if t, ok := m["content"].(string); ok {
-						return strings.TrimSpace(t), nil
-					}
 				}
 			}
 		}
