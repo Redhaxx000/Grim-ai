@@ -344,7 +344,7 @@ func readLastMessages(db *bolt.DB, convKey string, n int) ([]StoredMessage, erro
 
 func buildPrompt(history []StoredMessage) string {
     sys := "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response."
-	parts := []string{"SYSTEM: " + sys}."
+	parts := []string{"SYSTEM: " + sys}"
     var parts []string
     parts = append(parts, "SYSTEM: "+sys)
 
@@ -361,7 +361,7 @@ func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 		"model": model,
 		"messages": []map[string]string{
 			{"role": "system", "content": "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response."
-	parts := []string{"SYSTEM: " + sys}."},
+	parts := []string{"SYSTEM: " + sys}"},
 			{"role": "user", "content": prompt},
 		},
 		"max_tokens": 512,
