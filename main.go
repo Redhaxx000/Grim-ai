@@ -82,10 +82,9 @@ func main() {
 	// --- AI message handler (single reply safe) ---
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil || m.Author.Bot {
-			return // ignore all bots
+			return
 		}
 
-		// Check if bot is mentioned or if this message is a reply to the bot
 		isMentioned := false
 		for _, u := range m.Mentions {
 			if u.ID == botID {
@@ -103,22 +102,21 @@ func main() {
 		}
 
 		if !isMentioned && !isReplyToBot {
-			return // bot not triggered
+			return
 		}
 
-		// Prevent duplicate replies: check if bot already replied to this message
+		// Prevent duplicate replies
 		recentMsgs, err := s.ChannelMessages(m.ChannelID, 50, "", "", "")
 		if err == nil {
 			for _, msg := range recentMsgs {
 				if msg.Author != nil && msg.Author.ID == botID && msg.MessageReference != nil {
 					if msg.MessageReference.MessageID == m.ID {
-						return // already replied
+						return
 					}
 				}
 			}
 		}
 
-		// --- Append user message to memory ---
 		convKey := BucketPrefix + m.ChannelID
 		userMsg := StoredMessage{
 			Role:      "user",
@@ -129,14 +127,12 @@ func main() {
 			log.Printf("appendMemory user: %v", err)
 		}
 
-		// --- Read last messages and build prompt ---
 		history, err := readLastMessages(db, convKey, ContextMessages)
 		if err != nil {
 			log.Printf("readLastMessages: %v", err)
 		}
 		prompt := buildPrompt(history)
 
-		// --- Call LLM ---
 		replyText, err := SendToLLM(cerebrasURL, cerebrasKey, model, prompt)
 		if err != nil {
 			log.Printf("LLM error: %v", err)
@@ -224,7 +220,6 @@ func main() {
 	}
 	defer dg.Close()
 
-	// --- Register slash command ---
 	_, err = dg.ApplicationCommandCreate(dg.State.User.ID, "", &discordgo.ApplicationCommand{
 		Name:        "setstatus",
 		Description: "Change bot status/activity",
@@ -253,7 +248,6 @@ func main() {
 		log.Println("Cannot create slash command:", err)
 	}
 
-	// --- Render keepalive webserver ---
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -373,19 +367,19 @@ func buildPrompt(history []StoredMessage) string {
 
 func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 	payload := map[string]any{
-    "model": model,
-    "messages": []map[string]string{
-        {
-            "role":    "system",
-            "content": "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response.",
-        },
-        {
-            "role":    "user",
-            "content": prompt,
-        },
-    },
-    "max_tokens": 512,
-}
+		"model": model,
+		"messages": []map[string]string{
+			{
+				"role":    "system",
+				"content": "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response.",
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"max_tokens": 512,
+	}
 
 	bodyBytes, _ := json.Marshal(payload)
 	ctx, cancel := context.WithTimeout(context.Background(), RequestTimeout)
