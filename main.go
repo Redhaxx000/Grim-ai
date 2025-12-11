@@ -23,13 +23,13 @@ import (
 
 const (
 	DBPath           = "memory.db"
-	BucketPrefix     = "conv_"    // bucket per conversation (channel or user)
-	MaxMemoryEntries = 20         // keep last N messages
-	ContextMessages  = 8          // how many messages to send into LLM
+	BucketPrefix     = "conv_"
+	MaxMemoryEntries = 20
+	ContextMessages  = 8
 	RequestTimeout   = 30 * time.Second
 )
 
-// Discord activity type constants (latest discordgo)
+// Discord activity types
 const (
 	ActivityTypePlaying   discordgo.ActivityType = 0
 	ActivityTypeStreaming discordgo.ActivityType = 1
@@ -38,7 +38,7 @@ const (
 )
 
 type StoredMessage struct {
-	Role      string    `json:"role"` // "user" or "assistant" or "system"
+	Role      string    `json:"role"`
 	Content   string    `json:"content"`
 	Timestamp time.Time `json:"ts"`
 }
@@ -55,10 +55,7 @@ func main() {
 	discordToken := mustEnv("DISCORD_TOKEN")
 	cerebrasURL := mustEnv("CEREBRAS_API_URL")
 	cerebrasKey := mustEnv("CEREBRAS_API_KEY")
-	model := os.Getenv("MODEL")
-	if model == "" {
-		model = "default"
-	}
+	model := mustEnv("MODEL")
 	botName := os.Getenv("BOT_NAME")
 	if botName == "" {
 		botName = "ai-bot"
@@ -120,27 +117,28 @@ func main() {
 			log.Printf("readLastMessages: %v", err)
 		}
 
-		prompt := buildPrompt(history, m.Author.Username, botName)
+		prompt := buildPrompt(history)
 
 		replyText, err := SendToLLM(cerebrasURL, cerebrasKey, model, prompt)
 		if err != nil {
 			log.Printf("LLM error: %v", err)
-			_, _ = s.ChannelMessageSendReply(m.ChannelID, "Sorry, LLM error: "+err.Error(), m.Reference())
-			return
 		}
 
-		assistantMsg := StoredMessage{
-			Role:      "assistant",
-			Content:   replyText,
-			Timestamp: time.Now().UTC(),
-		}
-		if err := appendMemory(db, convKey, assistantMsg); err != nil {
-			log.Printf("appendMemory assistant: %v", err)
-		}
-
-		_, err = s.ChannelMessageSendReply(m.ChannelID, replyText, m.Reference())
-		if err != nil {
-			log.Printf("send reply failed: %v", err)
+		if strings.TrimSpace(replyText) != "" {
+			assistantMsg := StoredMessage{
+				Role:      "assistant",
+				Content:   replyText,
+				Timestamp: time.Now().UTC(),
+			}
+			if err := appendMemory(db, convKey, assistantMsg); err != nil {
+				log.Printf("appendMemory assistant: %v", err)
+			}
+			_, err = s.ChannelMessageSendReply(m.ChannelID, replyText, m.Reference())
+			if err != nil {
+				log.Printf("send reply failed: %v", err)
+			}
+		} else {
+			log.Printf("No reply returned from LLM, skipping message send.")
 		}
 	})
 
@@ -182,7 +180,7 @@ func main() {
 			}
 
 			err := s.UpdateStatusComplex(discordgo.UpdateStatusData{
-				Status: status, // online, idle, dnd
+				Status: status,
 				Activities: []*discordgo.Activity{
 					{
 						Name: actName,
@@ -344,8 +342,9 @@ func readLastMessages(db *bolt.DB, convKey string, n int) ([]StoredMessage, erro
 	return out, nil
 }
 
-func buildPrompt(history []StoredMessage, username, botName string) string {
-	sys := fmt.Sprintf("You are %s, an assistant in a Discord server. Be concise, helpful, and friendly. Keep replies suitable for chat.", botName)
+func buildPrompt(history []StoredMessage) string {
+	// Clean system prompt to avoid prepending bot name
+	sys := "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response."
 	parts := []string{"SYSTEM: " + sys}
 	for _, m := range history {
 		role := strings.ToUpper(m.Role)
@@ -359,7 +358,7 @@ func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "You are a helpful Discord bot."},
+			{"role": "system", "content": "You are a helpful Discord assistant."},
 			{"role": "user", "content": prompt},
 		},
 		"max_tokens": 512,
@@ -391,7 +390,6 @@ func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 
 	var obj map[string]any
 	if err := json.Unmarshal(respBytes, &obj); err == nil {
-		// extract first message content
 		if choices, ok := obj["choices"].([]any); ok && len(choices) > 0 {
 			if ch, ok := choices[0].(map[string]any); ok {
 				if msg, ok := ch["message"].(map[string]any); ok {
