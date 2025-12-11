@@ -29,6 +29,14 @@ const (
 	RequestTimeout   = 30 * time.Second
 )
 
+// Discord activity type constants (for latest discordgo)
+const (
+	ActivityTypePlaying   discordgo.ActivityType = 0
+	ActivityTypeStreaming discordgo.ActivityType = 1
+	ActivityTypeListening discordgo.ActivityType = 2
+	ActivityTypeWatching  discordgo.ActivityType = 3
+)
+
 type StoredMessage struct {
 	Role      string    `json:"role"` // "user" or "assistant" or "system"
 	Content   string    `json:"content"`
@@ -162,15 +170,15 @@ func main() {
 			var actType discordgo.ActivityType
 			switch strings.ToLower(actTypeStr) {
 			case "playing":
-				actType = discordgo.Game
+				actType = ActivityTypePlaying
 			case "streaming":
-				actType = discordgo.Streaming
+				actType = ActivityTypeStreaming
 			case "listening":
-				actType = discordgo.Listening
+				actType = ActivityTypeListening
 			case "watching":
-				actType = discordgo.Watching
+				actType = ActivityTypeWatching
 			default:
-				actType = discordgo.Game
+				actType = ActivityTypePlaying
 			}
 
 			err := s.UpdateStatusComplex(discordgo.UpdateStatusData{
