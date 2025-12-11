@@ -27,7 +27,7 @@ var (
 	model       = "llama-3.3-70b"
 )
 
-// ---------- MEMORY TYPES ----------
+// ---------- MEMORY ----------
 type MemoryDB struct {
 	Data map[string][]StoredMessage
 }
@@ -38,7 +38,6 @@ type StoredMessage struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// ---------- MEMORY FUNCTIONS ----------
 func NewMemoryDB() *MemoryDB {
 	return &MemoryDB{Data: make(map[string][]StoredMessage)}
 }
@@ -59,7 +58,6 @@ func readLastMessages(db *MemoryDB, key string, count int) ([]StoredMessage, err
 // ---------- PROMPT BUILDER ----------
 func buildPrompt(history []StoredMessage) []map[string]string {
 	out := []map[string]string{}
-
 	for _, h := range history {
 		out = append(out, map[string]string{
 			"role":    h.Role,
@@ -86,9 +84,7 @@ func SendToLLM(url, key, model string, messages []map[string]string) (string, er
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
 
-	client := &http.Client{
-		Timeout: 25 * time.Second,
-	}
+	client := &http.Client{Timeout: 25 * time.Second}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -108,7 +104,7 @@ func SendToLLM(url, key, model string, messages []map[string]string) (string, er
 	return msg["content"].(string), nil
 }
 
-// ---------- UTIL ----------
+// ---------- UTILS ----------
 func stripUserMention(text, botID string) string {
 	return strings.ReplaceAll(text, "<@"+botID+">", "")
 }
@@ -133,7 +129,7 @@ func main() {
 	}
 	botID = u.ID
 
-	// --------- MESSAGE HANDLER (FINAL FIXED VERSION) ---------
+	// ---------- MESSAGE HANDLER ----------
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil || m.Author.Bot {
 			return
@@ -157,7 +153,7 @@ func main() {
 			}
 		}
 
-		// priority: reply beats mention
+		// reply overrides mention
 		if isReplyToBot {
 			isMentioned = false
 		}
@@ -166,7 +162,6 @@ func main() {
 			return
 		}
 
-		// memory key
 		convKey := BucketPrefix + m.ChannelID
 
 		userMsg := StoredMessage{
@@ -199,15 +194,28 @@ func main() {
 		_, _ = s.ChannelMessageSendReply(m.ChannelID, reply, m.Reference())
 	})
 
-	// ----------------------------------------------------------
-
+	// ---------- START DISCORD ----------
 	err = dg.Open()
 	if err != nil {
 		log.Fatalf("Error opening Discord connection: %v", err)
 	}
 	log.Println("Bot running...")
 
-	// Shutdown handling
+	// ---------- KEEP-ALIVE PORT FOR RENDER ----------
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	go func() {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080" // fallback for local testing
+		}
+		log.Println("Keep-alive server running on port " + port)
+		log.Fatal(http.ListenAndServe(":"+port, nil))
+	}()
+
+	// ---------- SHUTDOWN ----------
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
