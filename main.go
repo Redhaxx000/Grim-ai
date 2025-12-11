@@ -373,19 +373,19 @@ func buildPrompt(history []StoredMessage) string {
 
 func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 	payload := map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{
-				"role":    "system",
-				"content": "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response.",
-			},
-			{
-				"role":    "user",
-				"content": prompt,
-			},
-		},
-		"max_tokens": 512,
-	}
+    "model": model,
+    "messages": []map[string]string{
+        {
+            "role":    "system",
+            "content": "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response.",
+        },
+        {
+            "role":    "user",
+            "content": prompt,
+        },
+    },
+    "max_tokens": 512,
+}
 
 	bodyBytes, _ := json.Marshal(payload)
 	ctx, cancel := context.WithTimeout(context.Background(), RequestTimeout)
