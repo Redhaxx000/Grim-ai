@@ -79,11 +79,13 @@ func main() {
 		log.Printf("Connected as: %s#%s (ID %s)", s.State.User.Username, s.State.User.Discriminator, botID)
 	})
 
-	// --- AI message handler ---
+	// --- AI message handler (single reply safe) ---
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil || m.Author.Bot {
-			return
+			return // ignore all bots
 		}
+
+		// Check if bot is mentioned or if this message is a reply to the bot
 		isMentioned := false
 		for _, u := range m.Mentions {
 			if u.ID == botID {
@@ -91,6 +93,7 @@ func main() {
 				break
 			}
 		}
+
 		isReplyToBot := false
 		if m.MessageReference != nil && m.MessageReference.MessageID != "" {
 			ref, err := s.ChannelMessage(m.ChannelID, m.MessageReference.MessageID)
@@ -98,10 +101,24 @@ func main() {
 				isReplyToBot = true
 			}
 		}
+
 		if !isMentioned && !isReplyToBot {
-			return
+			return // bot not triggered
 		}
 
+		// Prevent duplicate replies: check if bot already replied to this message
+		recentMsgs, err := s.ChannelMessages(m.ChannelID, 50, "", "", "")
+		if err == nil {
+			for _, msg := range recentMsgs {
+				if msg.Author != nil && msg.Author.ID == botID && msg.MessageReference != nil {
+					if msg.MessageReference.MessageID == m.ID {
+						return // already replied
+					}
+				}
+			}
+		}
+
+		// --- Append user message to memory ---
 		convKey := BucketPrefix + m.ChannelID
 		userMsg := StoredMessage{
 			Role:      "user",
@@ -112,16 +129,18 @@ func main() {
 			log.Printf("appendMemory user: %v", err)
 		}
 
+		// --- Read last messages and build prompt ---
 		history, err := readLastMessages(db, convKey, ContextMessages)
 		if err != nil {
 			log.Printf("readLastMessages: %v", err)
 		}
-
 		prompt := buildPrompt(history)
 
+		// --- Call LLM ---
 		replyText, err := SendToLLM(cerebrasURL, cerebrasKey, model, prompt)
 		if err != nil {
 			log.Printf("LLM error: %v", err)
+			return
 		}
 
 		if strings.TrimSpace(replyText) != "" {
@@ -133,12 +152,11 @@ func main() {
 			if err := appendMemory(db, convKey, assistantMsg); err != nil {
 				log.Printf("appendMemory assistant: %v", err)
 			}
+
 			_, err = s.ChannelMessageSendReply(m.ChannelID, replyText, m.Reference())
 			if err != nil {
 				log.Printf("send reply failed: %v", err)
 			}
-		} else {
-			log.Printf("No reply returned from LLM, skipping message send.")
 		}
 	})
 
@@ -255,7 +273,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	log.Println("Shutting down.")
-}
+})
 
 // --- helpers ---
 func stripUserMention(content, botID string) string {
@@ -347,7 +365,6 @@ func buildPrompt(history []StoredMessage) string {
 	parts := []string{"SYSTEM: " + sys}
 
 	for _, m := range history {
-		// only include the message content, ignore role and timestamp
 		parts = append(parts, m.Content)
 	}
 
