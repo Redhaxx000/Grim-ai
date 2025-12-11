@@ -343,26 +343,29 @@ func readLastMessages(db *bolt.DB, convKey string, n int) ([]StoredMessage, erro
 }
 
 func buildPrompt(history []StoredMessage) string {
-    sys := "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response."
-	parts := []string{"SYSTEM: " + sys}"
-    var parts []string
-    parts = append(parts, "SYSTEM: "+sys)
+	sys := "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response."
+	parts := []string{"SYSTEM: " + sys}
 
-    for _, m := range history {
-        // only include the message content, ignore role and timestamp
-        parts = append(parts, m.Content)
-    }
+	for _, m := range history {
+		// only include the message content, ignore role and timestamp
+		parts = append(parts, m.Content)
+	}
 
-    return strings.Join(parts, "\n\n")
+	return strings.Join(parts, "\n\n")
 }
 
 func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response."
-	parts := []string{"SYSTEM: " + sys}"},
-			{"role": "user", "content": prompt},
+			{
+				"role":    "system",
+				"content": "You are a discord member in a semi-toxic server named Vanir, you cuss and use gen alpha terms (sybau, ts etc) quite often, you dont reply in long messages / paragraphs. You dont say ur display name before every response.",
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
 		},
 		"max_tokens": 512,
 	}
