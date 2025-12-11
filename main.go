@@ -29,7 +29,7 @@ const (
 	RequestTimeout   = 30 * time.Second
 )
 
-// Discord activity type constants (for latest discordgo)
+// Discord activity type constants (latest discordgo)
 const (
 	ActivityTypePlaying   discordgo.ActivityType = 0
 	ActivityTypeStreaming discordgo.ActivityType = 1
@@ -357,11 +357,14 @@ func buildPrompt(history []StoredMessage, username, botName string) string {
 
 func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 	payload := map[string]any{
-		"model":      model,
-		"input":      prompt,
-		"stream":     false,
+		"model": model,
+		"messages": []map[string]string{
+			{"role": "system", "content": "You are a helpful Discord bot."},
+			{"role": "user", "content": prompt},
+		},
 		"max_tokens": 512,
 	}
+
 	bodyBytes, _ := json.Marshal(payload)
 	ctx, cancel := context.WithTimeout(context.Background(), RequestTimeout)
 	defer cancel()
@@ -388,10 +391,13 @@ func SendToLLM(url, apiKey, model, prompt string) (string, error) {
 
 	var obj map[string]any
 	if err := json.Unmarshal(respBytes, &obj); err == nil {
-		for _, k := range []string{"output", "text", "result", "reply", "content"} {
-			if v, ok := obj[k]; ok {
-				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-					return strings.TrimSpace(s), nil
+		// extract first message content
+		if choices, ok := obj["choices"].([]any); ok && len(choices) > 0 {
+			if ch, ok := choices[0].(map[string]any); ok {
+				if msg, ok := ch["message"].(map[string]any); ok {
+					if content, ok := msg["content"].(string); ok {
+						return strings.TrimSpace(content), nil
+					}
 				}
 			}
 		}
